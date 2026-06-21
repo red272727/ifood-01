@@ -8,11 +8,14 @@
 # MAGIC controle de ingestão e particionamento técnico.
 
 # COMMAND ----------
+
 import os
 import sys
 from pyspark.sql import SparkSession, functions as F
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+PROJECT_ROOT = "/Workspace/Repos/ifood/ifood-01/ifood-case"
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 from src.utils.config import (
     IS_DATABRICKS,
     LANDING_PATH,
@@ -24,6 +27,7 @@ from src.utils.config import (
 )
 
 # COMMAND ----------
+
 def get_spark() -> SparkSession:
     if IS_DATABRICKS:
         return SparkSession.builder.getOrCreate()
@@ -42,50 +46,78 @@ def get_spark() -> SparkSession:
     return configure_spark_with_delta_pip(builder).getOrCreate()
 
 # COMMAND ----------
-def run():
-    spark = get_spark()
-    spark.sparkContext.setLogLevel("WARN")
 
-    # Lê todos os meses da landing zone de uma vez, com path glob,
-    # já trazendo year/month como colunas a partir da estrutura de pastas.
-    input_path = f"{LANDING_PATH}/year={YEAR}/month=*/*.parquet"
-    print(f"Lendo landing zone em: {input_path}")
+from functools import reduce
+from pyspark.sql import functions as F
+from pyspark.sql.types import (
+    StructType, StructField, LongType, DoubleType, StringType, TimestampNTZType
+)
 
-    df = (
-        spark.read.option("mergeSchema", "true")
-        .parquet(input_path)
-        .withColumn("_source_file", F.input_file_name())
-        .withColumn("_ingestion_timestamp", F.current_timestamp())
-        .withColumn("_year", F.lit(YEAR))
-        .withColumn(
-            "_month",
-            F.regexp_extract(F.col("_source_file"), r"month=(\d{2})", 1).cast("int"),
-        )
+def normalize_yellow_schema(df):
+    # Corrige diferença airport_fee vs Airport_fee
+    if "Airport_fee" in df.columns and "airport_fee" not in df.columns:
+        df = df.withColumnRenamed("Airport_fee", "airport_fee")
+
+    return (
+        df
+        .withColumn("VendorID", F.col("VendorID").cast("long"))
+        .withColumn("passenger_count", F.col("passenger_count").cast("double"))
+        .withColumn("RatecodeID", F.col("RatecodeID").cast("double"))
+        .withColumn("PULocationID", F.col("PULocationID").cast("long"))
+        .withColumn("DOLocationID", F.col("DOLocationID").cast("long"))
+        .withColumn("payment_type", F.col("payment_type").cast("long"))
+        .withColumn("airport_fee", F.col("airport_fee").cast("double"))
     )
+
+def run():
+    spark = SparkSession.builder.getOrCreate()
+
+    dfs = []
+
+    for month in MONTHS:
+        month_path = f"{LANDING_PATH}/year={YEAR}/month={month:02d}/*.parquet"
+        print(f"Lendo mês {month:02d}: {month_path}")
+
+        df_month = spark.read.parquet(month_path)
+
+        df_month = (
+            normalize_yellow_schema(df_month)
+            .withColumn("_source_file", 
+                        F.col("_metadata.file_path"))
+            .withColumn("_ingestion_timestamp", F.current_timestamp())
+            .withColumn("_year", F.lit(YEAR))
+            .withColumn("_month", F.lit(month))
+        )
+
+        dfs.append(df_month)
+
+    df = reduce(lambda a, b: a.unionByName(b, allowMissingColumns=True), dfs)
 
     print(f"Total de registros lidos da landing zone: {df.count():,}")
     df.printSchema()
 
-    # Cria o database lógico, se não existir
     spark.sql(f"CREATE DATABASE IF NOT EXISTS {BRONZE_DB}")
 
-    # Grava como tabela Delta, particionada por ano/mês de ingestão.
-    # overwrite + replaceWhere garante idempotência: reexecutar o pipeline
-    # para o mesmo período não duplica dados.
     (
         df.write.format("delta")
         .mode("overwrite")
         .partitionBy("_year", "_month")
         .option("overwriteSchema", "true")
-        .option("path", BRONZE_PATH)
         .saveAsTable(BRONZE_TABLE)
     )
 
     print(f"Tabela bronze criada/atualizada: {BRONZE_TABLE} ({BRONZE_PATH})")
-    spark.sql(f"SELECT _year, _month, COUNT(*) AS qtd FROM {BRONZE_TABLE} GROUP BY 1,2 ORDER BY 1,2").show()
+
+    spark.sql(f"""
+        SELECT _year, _month, COUNT(*) AS qtd
+        FROM {BRONZE_TABLE}
+        GROUP BY 1,2
+        ORDER BY 1,2
+    """).show()
 
     return df
 
 # COMMAND ----------
+
 if __name__ == "__main__":
     run()

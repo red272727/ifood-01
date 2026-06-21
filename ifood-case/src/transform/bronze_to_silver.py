@@ -8,11 +8,15 @@
 # MAGIC para ser consultada via SQL pelos usuários finais.
 
 # COMMAND ----------
+
 import os
 import sys
 from pyspark.sql import SparkSession, functions as F
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+repo_root = "/Workspace/Repos/ifood/ifood-01/ifood-case"
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
+
 from src.utils.config import (
     IS_DATABRICKS,
     BRONZE_TABLE,
@@ -23,6 +27,7 @@ from src.utils.config import (
 )
 
 # COMMAND ----------
+
 def get_spark() -> SparkSession:
     if IS_DATABRICKS:
         return SparkSession.builder.getOrCreate()
@@ -40,6 +45,7 @@ def get_spark() -> SparkSession:
     return configure_spark_with_delta_pip(builder).getOrCreate()
 
 # COMMAND ----------
+
 def run():
     spark = get_spark()
     spark.sparkContext.setLogLevel("WARN")
@@ -112,5 +118,59 @@ def run():
     return silver_df
 
 # COMMAND ----------
+
+# DBTITLE 1,Cell 5
 if __name__ == "__main__":
-    run()
+    spark = SparkSession.builder.getOrCreate()
+
+    bronze_df = spark.table(BRONZE_TABLE)
+    print(f"Total de registros na bronze: {bronze_df.count():,}")
+
+    silver_df = bronze_df.select(*REQUIRED_COLUMNS)
+
+    silver_df = (
+        silver_df.withColumn("VendorID", F.col("VendorID").cast("int"))
+        .withColumn("passenger_count", F.col("passenger_count").cast("int"))
+        .withColumn("total_amount", F.col("total_amount").cast("double"))
+        .withColumn("tpep_pickup_datetime", F.col("tpep_pickup_datetime").cast("timestamp"))
+        .withColumn("tpep_dropoff_datetime", F.col("tpep_dropoff_datetime").cast("timestamp"))
+    )
+
+    silver_df = (
+        silver_df.withColumn("trip_year", F.year("tpep_pickup_datetime"))
+        .withColumn("trip_month", F.month("tpep_pickup_datetime"))
+        .withColumn("trip_hour", F.hour("tpep_pickup_datetime"))
+    )
+
+    rows_before = silver_df.count()
+
+    silver_df = (
+        silver_df
+        .dropDuplicates()
+        .filter(F.col("passenger_count").isNotNull() & (F.col("passenger_count") > 0))
+        .filter(F.col("total_amount").isNotNull() & (F.col("total_amount") >= 0))
+        .filter(
+            F.col("tpep_pickup_datetime").isNotNull()
+            & F.col("tpep_dropoff_datetime").isNotNull()
+            & (F.col("tpep_dropoff_datetime") >= F.col("tpep_pickup_datetime"))
+        )
+        .filter((F.col("trip_year") == 2023) & (F.col("trip_month").between(1, 5)))
+    )
+
+    rows_after = silver_df.count()
+    print(f"Registros antes da limpeza: {rows_before:,} | depois: {rows_after:,} "
+          f"({rows_before - rows_after:,} removidos)")
+
+    spark.sql(f"CREATE DATABASE IF NOT EXISTS {SILVER_DB}")
+
+    (
+        silver_df.write.format("delta")
+        .mode("overwrite")
+        .partitionBy("trip_year", "trip_month")
+        .option("overwriteSchema", "true")
+        .saveAsTable(SILVER_TABLE)
+    )
+
+    print(f"Tabela silver criada/atualizada: {SILVER_TABLE}")
+    silver_df.printSchema()
+    spark.sql(f"SELECT trip_year, trip_month, COUNT(*) AS qtd FROM {SILVER_TABLE} GROUP BY 1,2 ORDER BY 1,2").show()

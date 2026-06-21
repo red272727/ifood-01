@@ -1,5 +1,3 @@
-# Databricks notebook source
-# COMMAND ----------
 """
 config.py
 ---------
@@ -13,7 +11,6 @@ dois ambientes.
 
 import os
 
-# COMMAND ----------
 # Detecta o ambiente (Databricks x local) -----------------------------------
 try:
     dbutils  # noqa: F821  -> só existe dentro do Databricks
@@ -21,7 +18,6 @@ try:
 except NameError:
     IS_DATABRICKS = False
 
-# COMMAND ----------
 # Paths das camadas do Data Lake ---------------------------------------------
 if IS_DATABRICKS:
     BASE_PATH = "dbfs:/mnt/datalake"
@@ -37,7 +33,6 @@ SILVER_DB = "silver"
 BRONZE_TABLE = f"{BRONZE_DB}.yellow_tripdata"
 SILVER_TABLE = f"{SILVER_DB}.yellow_tripdata"
 
-# COMMAND ----------
 # Período do desafio: Janeiro a Maio de 2023 ---------------------------------
 YEAR = 2023
 MONTHS = [1, 2, 3, 4, 5]
@@ -53,7 +48,6 @@ def source_url(year: int, month: int) -> str:
     """URL pública de download do arquivo na fonte oficial NYC TLC."""
     return f"{TLC_BASE_URL}/{source_file_name(year, month)}"
 
-# COMMAND ----------
 # Colunas mínimas exigidas pelo desafio (camada de consumo / silver) --------
 REQUIRED_COLUMNS = [
     "VendorID",

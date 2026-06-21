@@ -1,5 +1,4 @@
 # Databricks notebook source
-# COMMAND ----------
 # MAGIC %md
 # MAGIC # Ingestão - Download para Landing Zone
 # MAGIC
@@ -9,11 +8,39 @@
 # MAGIC `year=YYYY/month=MM/`.
 
 # COMMAND ----------
-import os
-import sys
-import requests
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+import os
+
+base = "/Workspace/Repos/ifood/ifood-01/ifood-case"
+
+for folder in [
+    "src",
+    "src/utils",
+    "src/ingestion",
+    "src/transform",
+]:
+    init_file = os.path.join(base, folder, "__init__.py")
+    open(init_file, "a").close()
+    print("Criado:", init_file)
+
+# COMMAND ----------
+
+dbutils.library.restartPython()
+
+# COMMAND ----------
+
+# MAGIC %sh
+# MAGIC ls -la /Workspace/Repos/ifood/ifood-01/ifood-case/src/utils
+
+# COMMAND ----------
+
+import sys
+
+PROJECT_ROOT = "/Workspace/Repos/ifood/ifood-01/ifood-case"
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from src.utils.config import (
     IS_DATABRICKS,
     LANDING_PATH,
@@ -24,6 +51,7 @@ from src.utils.config import (
 )
 
 # COMMAND ----------
+
 def _local_path(p: str) -> str:
     """Converte um path dbfs:/... em /dbfs/... para acesso via Python puro,
     ou mantém o path local como está fora do Databricks."""
@@ -32,6 +60,7 @@ def _local_path(p: str) -> str:
     return p
 
 # COMMAND ----------
+
 def download_month(year: int, month: int) -> str:
     """Baixa o arquivo de um mês específico para a landing zone e retorna o path final."""
     url = source_url(year, month)
@@ -58,6 +87,7 @@ def download_month(year: int, month: int) -> str:
     return f"{target_dir}/{file_name}"
 
 # COMMAND ----------
+
 def run():
     paths = []
     for month in MONTHS:
@@ -68,5 +98,9 @@ def run():
     return paths
 
 # COMMAND ----------
+
+import os
+import requests
+
 if __name__ == "__main__":
     run()
