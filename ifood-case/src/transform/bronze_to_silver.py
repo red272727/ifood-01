@@ -174,3 +174,32 @@ if __name__ == "__main__":
     print(f"Tabela silver criada/atualizada: {SILVER_TABLE}")
     silver_df.printSchema()
     spark.sql(f"SELECT trip_year, trip_month, COUNT(*) AS qtd FROM {SILVER_TABLE} GROUP BY 1,2 ORDER BY 1,2").show()
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT * FROM silver.yellow_tripdata LIMIT 10;
+# MAGIC
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT
+# MAGIC     trip_year,
+# MAGIC     trip_month,
+# MAGIC     ROUND(AVG(total_amount), 2) AS avg_total_amount
+# MAGIC FROM silver.yellow_tripdata
+# MAGIC GROUP BY trip_year, trip_month
+# MAGIC ORDER BY trip_year, trip_month;
+
+# COMMAND ----------
+
+# MAGIC %sql
+# MAGIC SELECT
+# MAGIC     trip_hour,
+# MAGIC     ROUND(AVG(passenger_count), 2) AS avg_passenger_count
+# MAGIC FROM silver.yellow_tripdata
+# MAGIC WHERE trip_year = 2023
+# MAGIC   AND trip_month = 5
+# MAGIC GROUP BY trip_hour
+# MAGIC ORDER BY trip_hour;

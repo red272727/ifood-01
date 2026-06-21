@@ -8,14 +8,16 @@
 # MAGIC pode ser livremente consumida via SQL pelos usuários finais.
 
 # COMMAND ----------
+
 import os
 import sys
 from pyspark.sql import SparkSession, functions as F
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.append("/Workspace/Repos/ifood/ifood-01/ifood-case")
 from src.utils.config import IS_DATABRICKS, SILVER_TABLE
 
 # COMMAND ----------
+
 def get_spark() -> SparkSession:
     if IS_DATABRICKS:
         return SparkSession.builder.getOrCreate()
@@ -33,12 +35,13 @@ def get_spark() -> SparkSession:
     return configure_spark_with_delta_pip(builder).getOrCreate()
 
 # COMMAND ----------
-spark = get_spark()
+
+spark = SparkSession.builder.getOrCreate()
 df = spark.table(SILVER_TABLE)
-df.cache()
 print(f"Total de registros na silver: {df.count():,}")
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Pergunta 1
 # MAGIC **Qual a média de valor total (`total_amount`) recebido em um mês,
@@ -48,6 +51,7 @@ print(f"Total de registros na silver: {df.count():,}")
 # MAGIC pelo mês (`trip_year`/`trip_month`) em que ocorreram.
 
 # COMMAND ----------
+
 # PySpark
 resp1_df = (
     df.groupBy("trip_year", "trip_month")
@@ -60,6 +64,7 @@ resp1_df = (
 resp1_df.show()
 
 # COMMAND ----------
+
 # Spark SQL equivalente
 df.createOrReplaceTempView("yellow_tripdata")
 
@@ -77,6 +82,7 @@ spark.sql(
 ).show()
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## Pergunta 2
 # MAGIC **Qual a média de passageiros (`passenger_count`) por cada hora do
@@ -87,6 +93,7 @@ spark.sql(
 # MAGIC `passenger_count` das corridas iniciadas naquela hora.
 
 # COMMAND ----------
+
 # PySpark
 resp2_df = (
     df.filter((F.col("trip_year") == 2023) & (F.col("trip_month") == 5))
@@ -100,6 +107,7 @@ resp2_df = (
 resp2_df.show(24)
 
 # COMMAND ----------
+
 # Spark SQL equivalente
 spark.sql(
     """
@@ -115,11 +123,15 @@ spark.sql(
 ).show(24)
 
 # COMMAND ----------
+
 # MAGIC %md
 # MAGIC ## (Opcional) Persistindo os resultados em uma camada Gold
 # MAGIC Útil para consumo direto por BI/dashboards, sem reprocessar a silver.
 
 # COMMAND ----------
+
+spark.sql("CREATE SCHEMA IF NOT EXISTS gold")
+
 resp1_df.write.format("delta").mode("overwrite").saveAsTable("gold.media_total_amount_por_mes")
 resp2_df.write.format("delta").mode("overwrite").saveAsTable("gold.media_passageiros_por_hora_maio")
 
